@@ -6,6 +6,7 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -40,6 +41,25 @@ from local_meeting_ai.domain.protocols import (
 from local_meeting_ai.infrastructure.database.library import LibraryRepository
 
 logger = logging.getLogger(__name__)
+
+_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def is_cross_site_request(request: Request) -> bool:
+    """Return True when a browser sent this request from another origin.
+
+    Browsers send Sec-Fetch-Site (all current ones) or Origin on cross-origin
+    writes. Requests with neither come from non-browser clients such as the
+    MCP gateway or scripts on this machine, which are allowed.
+    """
+    fetch_site = request.headers.get("sec-fetch-site")
+    if fetch_site is not None:
+        return fetch_site not in {"same-origin", "none"}
+    origin = request.headers.get("origin")
+    if origin is None:
+        return False
+    host = request.headers.get("host", "").lower()
+    return origin == "null" or urlsplit(origin).netloc.lower() != host
 
 
 def create_app(
@@ -141,6 +161,23 @@ def create_app(
 
     allowed_hosts = ["127.0.0.1", "localhost", "testserver", resolved_settings.host]
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(dict.fromkeys(allowed_hosts)))
+
+    @app.middleware("http")
+    async def reject_cross_site_writes(request: Request, call_next: object) -> object:
+        # Any web page can send a "simple" POST to 127.0.0.1. CORS hides the response
+        # but the action still runs, so writes must come from this app's own pages.
+        if request.method in _UNSAFE_METHODS and is_cross_site_request(request):
+            logger.warning(
+                "Rejected cross-site %s %s from origin %s",
+                request.method,
+                request.url.path,
+                request.headers.get("origin", "unknown"),
+            )
+            return JSONResponse(
+                {"detail": "Cross-site requests to Meet2Notes are not allowed"},
+                status_code=403,
+            )
+        return await call_next(request)  # type: ignore[operator]
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: object) -> object:

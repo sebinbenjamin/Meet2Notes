@@ -22,6 +22,10 @@ echo The exact local address will be shown below when the server is ready.
 echo Press Ctrl+C in this window to stop Meet2Notes.
 echo.
 
+rem This fork does not phone GitHub on start. The updater only accepts upstream
+rem releases; set M2N_SKIP_UPDATE_CHECK=0 to check anyway.
+if not defined M2N_SKIP_UPDATE_CHECK set "M2N_SKIP_UPDATE_CHECK=1"
+
 if /I not "%M2N_SKIP_UPDATE_CHECK%"=="1" (
     "%MEET2NOTES_PYTHON%" -m local_meeting_ai.updater check --interactive -- %*
     set "MEET2NOTES_UPDATE_CHECK_CODE=!ERRORLEVEL!"
