@@ -48,6 +48,9 @@ dependencies = [
 [project.optional-dependencies]
 transcription = [
     "faster-whisper>=1.1.0,<2",
+    # PyAV 19 removed av.open(metadata_errors=...), which faster-whisper 1.2.1 still passes.
+    # Drop the cap once a faster-whisper release includes SYSTRAN/faster-whisper@2ce7f9d.
+    "av>=11,<19",
 ]
 nvidia-asr = [
     "torch>=2.6,<3",
