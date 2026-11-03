@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -16,6 +17,21 @@ from local_meeting_ai.domain.errors import (
     ValidationError,
 )
 from local_meeting_ai.domain.protocols import CancellationCheck
+
+_RELEASE_VERSION = re.compile(r"ffmpeg version n?(\d+)\.")
+
+
+def filter_script_arguments(version_line: str | None, script: Path) -> list[str]:
+    """Return the options that read a filter graph from ``script``.
+
+    FFmpeg 7.0 added ``-/filter_complex <file>`` and deprecated
+    ``-filter_complex_script``; FFmpeg 9.0 removed the old option. Unknown and
+    git builds are treated as current releases.
+    """
+    match = _RELEASE_VERSION.match(version_line or "")
+    if match and int(match.group(1)) < 7:
+        return ["-filter_complex_script", str(script)]
+    return ["-/filter_complex", str(script)]
 
 
 class FFmpegClient:
@@ -229,8 +245,7 @@ class FFmpegClient:
             "-y",
             "-i",
             str(source),
-            "-filter_complex_script",
-            str(filter_script),
+            *filter_script_arguments(self.capabilities().get("version"), filter_script),
             "-map",
             "[out]",
             *codec,
